@@ -137,7 +137,3 @@ Written in portable `bash`. Tested on Fedora Linux with the [Kitty terminal](htt
 ## Contributing
 
 Issues and PRs welcome. This started as a small personal itch-scratcher, so there's plenty of room to grow — multi-shell parity (fish, etc.), tab-completion for set names, import/export of stashes between machines, and so on.
-
-## License
-
-MIT
