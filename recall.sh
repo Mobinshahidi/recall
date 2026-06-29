@@ -230,3 +230,99 @@ forgetcmds() {
   done
   _MAKECMD_LIST=("${keep[@]}")
 }
+
+# Removes a recall-saved "# --- saved by recall on ... ---" block + its
+# function body from a given file, matching braces so nested { } inside the
+# commands themselves don't break the cut.
+_remove_block_from_file() {
+  local name="$1"
+  local target="$2"
+  local tmpfile
+  tmpfile=$(mktemp)
+
+  awk -v fname="$name" '
+    BEGIN { skip = 0; depth = 0 }
+    {
+      if ($0 ~ /^# --- saved by recall on/) {
+        marker_line = $0
+        if ((getline nextline) <= 0) { print marker_line; next }
+        if (nextline == fname"() {") {
+          skip = 1
+          depth = 1
+          next
+        } else {
+          print marker_line
+          print nextline
+          next
+        }
+      }
+      if (skip == 1) {
+        n_open = gsub(/{/, "{", $0)
+        n_close = gsub(/}/, "}", $0)
+        depth += n_open - n_close
+        if (depth <= 0) { skip = 0 }
+        next
+      }
+      print
+    }
+  ' "$target" > "$tmpfile"
+
+  mv "$tmpfile" "$target"
+}
+
+forgetpermanent() {
+  local rcfile="${HOME}/.bashrc"
+  [[ -n "$ZSH_VERSION" ]] && rcfile="${HOME}/.zshrc"
+
+  read -p "Name of the permanent command set to delete: " name
+
+  if [[ -z "$name" ]]; then
+    echo "Name cannot be empty."
+    return 1
+  fi
+
+  echo ""
+  echo "Where was '$name' saved?"
+  echo "  1) $rcfile"
+  echo "  2) A custom file path"
+  read -p "Choice: " dest
+
+  local target
+  if [[ "$dest" == "1" ]]; then
+    target="$rcfile"
+  elif [[ "$dest" == "2" ]]; then
+    read -p "Enter file path: " target
+    target="${target/#\~/$HOME}"
+  else
+    echo "Invalid choice."
+    return 1
+  fi
+
+  if [[ ! -f "$target" ]]; then
+    echo "File '$target' does not exist."
+    return 1
+  fi
+
+  if ! grep -qF "# --- saved by recall on" "$target" || \
+     ! grep -qF "${name}() {" "$target"; then
+    echo "Couldn't find a recall-saved block for '$name' in $target."
+    echo "It may have been saved manually, edited since, or saved under a different name."
+    return 1
+  fi
+
+  read -p "This will permanently remove '$name' from $target. Continue? (y/n): " confirm
+  if [[ "$confirm" != "y" ]]; then
+    echo "Cancelled."
+    return 0
+  fi
+
+  cp "$target" "${target}.bak"
+  _remove_block_from_file "$name" "$target"
+
+  unset -f "$name" 2>/dev/null
+
+  echo "Removed '$name' from $target."
+  echo "A backup of the original file was saved as ${target}.bak"
+  echo "Note: this only updates the file — '$name' is removed from your current"
+  echo "shell too, but any other open terminals will still have it until restarted."
+}
